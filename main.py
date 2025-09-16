@@ -13,7 +13,7 @@ for i in range(3):
         print(f"❌ No camera at index {i}")
 
 # Load trained model
-model = load_model("best_model.h5")
+model = load_model("final_model.h5")
 
 # Emotion labels (must match your training folders)
 emotion_labels = ["angry", "disgust", "fear", "happy", "neutral", "sad", "surprise"]
