@@ -1,54 +1,74 @@
+from flask import Flask, jsonify
 import cv2
 import numpy as np
 from keras.models import load_model
 from keras.applications.mobilenet import preprocess_input
+import threading
 
-#Test camera first
-for i in range(3):
-    cap = cv2.VideoCapture(i)
-    if cap.isOpened():
-        print(f"✅ Camera found at index {i}")
-        cap.release()
-    else:
-        print(f"❌ No camera at index {i}")
+app = Flask(__name__)
 
-# Load trained model
+# Load model
 model = load_model("final_model.h5")
-
-# Emotion labels (must match your training folders)
 emotion_labels = ["angry", "disgust", "fear", "happy", "neutral", "sad", "surprise"]
 
-# Start video capture
-cap = cv2.VideoCapture(0)
+# Global variables
+latest_emotion = "neutral"
+previous_emotion = None  # for change detection
 
-# Load OpenCV face detector
-face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+def emotion_recognition():
+    global latest_emotion, previous_emotion
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
+    cap = cv2.VideoCapture(0)
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
 
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            continue
 
-    for (x,y,w,h) in faces:
-        face = frame[y:y+h, x:x+w]
-        face = cv2.resize(face, (224,224))
-        face = np.expand_dims(face, axis=0)
-        face = preprocess_input(face)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(gray, 1.3, 5)
 
-        preds = model.predict(face)
-        emotion = emotion_labels[np.argmax(preds)]
+        detected_emotion = latest_emotion  # default fallback
 
-        # Draw bounding box + emotion
-        cv2.rectangle(frame, (x,y), (x+w,y+h), (0,255,0), 2)
-        cv2.putText(frame, emotion, (x,y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (36,255,12), 2)
+        for (x,y,w,h) in faces:
+            face = frame[y:y+h, x:x+w]
+            face = cv2.resize(face, (224,224))
+            face = np.expand_dims(face, axis=0)
+            face = preprocess_input(face)
 
-    cv2.imshow("Emotion Recognition", frame)
+            preds = model.predict(face)
+            detected_emotion = emotion_labels[np.argmax(preds)]
 
-    if cv2.waitKey(1) & 0xFF == ord("q"):
-        break
+        # Update only when changed
+        if detected_emotion != previous_emotion:
+            latest_emotion = detected_emotion
+            previous_emotion = detected_emotion
+            print(f"📡 Emotion changed → {latest_emotion}")  # confirm in terminal
 
-cap.release()
-cv2.destroyAllWindows()
+        # Optional: show window for debugging
+        if len(faces) > 0:
+            cv2.rectangle(frame, (x,y), (x+w,y+h), (0,255,0), 2)
+            cv2.putText(frame, latest_emotion, (x,y-10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (36,255,12), 2)
+
+        cv2.imshow("Emotion Recognition", frame)
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+# Flask route
+@app.route("/get_emotion", methods=["GET"])
+def get_emotion():
+    print(f"📡 Sending emotion: {latest_emotion}")
+    return jsonify({"emotion": latest_emotion})
+
+if __name__ == "__main__":
+    # Run camera + ML in background thread
+    t = threading.Thread(target=emotion_recognition, daemon=True)
+    t.start()
+
+    # Run Flask API
+    app.run(host="127.0.0.1", port=5000)
