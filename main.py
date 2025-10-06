@@ -2,19 +2,27 @@ import sounddevice as sd
 import numpy as np
 import librosa
 from sklearn.preprocessing import StandardScaler
-from joblib import load  # To load your saved model, scaler, label encoder
+from joblib import load
+import requests  # for sending predictions to Flask server
+
+# ------------------------------
+# Configuration
+# ------------------------------
+FLASK_SERVER_URL = "http://127.0.0.1:5000/voice-emotion"  # change to your Flask endpoint
+RECORD_DURATION = 3  # seconds
+SR = 22050  # sample rate
 
 # ------------------------------
 # Load your trained model
 # ------------------------------
-model = load("saved_model/model.joblib")        # RandomForestClassifier
-scaler = load("saved_model/scaler.joblib")      # StandardScaler
-label_encoder = load("saved_model/label_encoder.joblib")   # LabelEncoder
+model = load("saved_model/model.joblib")
+scaler = load("saved_model/scaler.joblib")
+label_encoder = load("saved_model/label_encoder.joblib")
 
 # ------------------------------
 # Feature extraction function
 # ------------------------------
-def extract_features(y, sr=22050, n_mfcc=40):
+def extract_features(y, sr=SR, n_mfcc=40):
     y, _ = librosa.effects.trim(y)
     mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=n_mfcc)
     mfcc_mean = np.mean(mfcc, axis=1)
@@ -28,11 +36,11 @@ def extract_features(y, sr=22050, n_mfcc=40):
 # ------------------------------
 # Record audio from microphone
 # ------------------------------
-def record_audio(duration=3, sr=22050):
+def record_audio(duration=RECORD_DURATION, sr=SR):
     print(f"Recording for {duration} seconds...")
     audio = sd.rec(int(duration * sr), samplerate=sr, channels=1)
     sd.wait()
-    audio = audio.flatten()  # convert to 1D array
+    audio = audio.flatten()
     return audio
 
 # ------------------------------
@@ -46,10 +54,25 @@ def predict_emotion(audio):
     return emotion
 
 # ------------------------------
+# Send to Flask server
+# ------------------------------
+def send_to_server(emotion):
+    data = {"emotion": emotion}
+    try:
+        response = requests.post(FLASK_SERVER_URL, json=data)
+        if response.status_code == 200:
+            print(f"✅ Sent emotion to server: {emotion}")
+        else:
+            print(f"⚠️ Server returned status {response.status_code}")
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Failed to send data: {e}")
+
+# ------------------------------
 # Main loop
 # ------------------------------
 if __name__ == "__main__":
     while True:
-        audio = record_audio(duration=3)  # 3-second recording
+        audio = record_audio()
         emotion = predict_emotion(audio)
         print(f"Predicted Emotion: {emotion}")
+        send_to_server(emotion)
