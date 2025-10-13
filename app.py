@@ -15,6 +15,14 @@ from utils import CvFpsCalc
 from model import KeyPointClassifier
 from model import PointHistoryClassifier
 
+import requests  # for sending predictions to Flask server
+
+# ------------------------------
+# Configuration
+# ------------------------------
+FLASK_SERVER_URL = "http://127.0.0.1:5000/gesture_receiver"  # change to your Flask endpoint
+RECORD_DURATION = 3  # seconds
+SR = 22050  # sample rate
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -53,7 +61,7 @@ def main():
     use_brect = True
 
     # カメラ準備 ###############################################################
-    cap = cv.VideoCapture(cap_device)
+    cap = cv.VideoCapture("http://192.168.1.100:8080/video")
     cap.set(cv.CAP_PROP_FRAME_WIDTH, cap_width)
     cap.set(cv.CAP_PROP_FRAME_HEIGHT, cap_height)
 
@@ -539,6 +547,18 @@ def draw_info(image, fps, mode, number):
                        cv.LINE_AA)
     return image
 
+# ------------------------------
+# Send to Flask server
+# ------------------------------
+def send_to_server(data):
+    try:
+        response = requests.post(FLASK_SERVER_URL, json=data, timeout=1)
+        if response.status_code == 200:
+            print(f"✅ Sent data to server: {data}")
+        else:
+            print(f"⚠️ Server returned status {response.status_code}: {response.text}")
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Failed to send data: {e}")
 
 if __name__ == '__main__':
     main()
